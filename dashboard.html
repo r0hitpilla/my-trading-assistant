@@ -3481,19 +3481,6 @@ async function placeOrder() {
   btn.disabled = false;
 }
 
-/* ── Wire up BUY buttons on suggestion cards ── */
-function wireBuyButtons() {
-  const stocks = [
-    { name:'Tata Consultancy Services', ticker:'TCS',      price:3842.50, stopLoss:3782, target1:3918, target2:3996 },
-    { name:'Sun Pharmaceutical',         ticker:'SUNPHARMA',price:1276.80, stopLoss:1257, target1:1302, target2:1328 },
-    { name:'HDFC Bank',                  ticker:'HDFCBANK', price:1534.20, stopLoss:1511, target1:1565, target2:1596 },
-  ];
-  document.querySelectorAll('[data-order-symbol]').forEach(btn => {
-    const sym   = btn.getAttribute('data-order-symbol');
-    const stock = stocks.find(s => s.ticker === sym);
-    if (stock) btn.addEventListener('click', () => showOrderModal(stock));
-  });
-}
 
 /* ── Order type toggle ── */
 document.getElementById('orderType')?.addEventListener('change', function() {
@@ -3516,18 +3503,35 @@ document.getElementById('orderModal')?.addEventListener('click', function(e) {
   if (e.target === this) this.style.display = 'none';
 });
 
-/* ── Add data-order-symbol to suggestion BUY/HOLD buttons ── */
-function patchSuggestionButtons() {
-  const map = { 'TCS': 0, 'SUNPHARMA': 1, 'HDFCBANK': 2 };
-  document.querySelectorAll('.signal-action-btn').forEach((btn, i) => {
+/* ── Stock data lookup by ticker ── */
+const STOCK_DATA = {
+  TCS:       { name:'Tata Consultancy Services', ticker:'TCS',       price:3842.50, stopLoss:3782, target1:3918, target2:3996 },
+  SUNPHARMA: { name:'Sun Pharmaceutical',        ticker:'SUNPHARMA', price:1276.80, stopLoss:1257, target1:1302, target2:1328 },
+  HDFCBANK:  { name:'HDFC Bank',                 ticker:'HDFCBANK',  price:1534.20, stopLoss:1511, target1:1565, target2:1596 },
+};
+
+/* ── Event delegation — catches BUY/HOLD clicks on ANY rendered card ── */
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.action-btn');
+  if (!btn) return;
+
+  // Find the parent suggestion card and read its ticker
+  const card = btn.closest('[data-ticker]') || btn.closest('.suggestion-card');
+  let ticker = card?.getAttribute('data-ticker');
+
+  // Fallback: match by position among all action-btn buttons
+  if (!ticker) {
+    const allBtns = Array.from(document.querySelectorAll('.action-btn'));
+    const idx = allBtns.indexOf(btn);
     const tickers = ['TCS', 'SUNPHARMA', 'HDFCBANK'];
-    if (tickers[i]) btn.setAttribute('data-order-symbol', tickers[i]);
-  });
-  wireBuyButtons();
-}
+    ticker = tickers[idx] ?? null;
+  }
+
+  const stock = ticker ? STOCK_DATA[ticker] : null;
+  showOrderModal(stock || { name: 'Stock', ticker: ticker || '', price: 0, stopLoss: 0, target1: 0, target2: 0 });
+});
 
 /* ── Refresh button ── */
-const origRefresh = document.getElementById('refreshBtn')?.onclick;
 document.getElementById('refreshBtn')?.addEventListener('click', () => {
   fetchMarketData();
   fetchSuggestionPrices();
@@ -3541,18 +3545,13 @@ async function startLiveData() {
     console.log('Backend not reachable — running in demo mode');
     return;
   }
-  // Initial fetch
   await fetchMarketData();
   fetchSuggestionPrices();
   fetchPortfolio();
 
-  // Patch BUY buttons after suggestions render
-  setTimeout(patchSuggestionButtons, 600);
-
-  // Poll every 30 seconds
-  setInterval(fetchMarketData,        30000);
-  setInterval(fetchSuggestionPrices,  15000);
-  setInterval(fetchPortfolio,         60000);
+  setInterval(fetchMarketData,       30000);
+  setInterval(fetchSuggestionPrices, 15000);
+  setInterval(fetchPortfolio,        60000);
 }
 
 startLiveData();
