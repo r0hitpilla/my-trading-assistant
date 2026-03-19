@@ -334,6 +334,11 @@ def run_analysis_thread():
 
 @app.route("/")
 def index():
+    # Handle case where Zerodha redirects to / instead of /callback
+    req_token = request.args.get("request_token")
+    if req_token:
+        return callback_handler(req_token)
+
     token = load_saved_token()
     logged_in = token is not None
     return render_template("index.html",
@@ -348,11 +353,8 @@ def login():
     return redirect(kite.login_url())
 
 
-@app.route("/callback")
-def callback():
-    req_token = request.args.get("request_token")
-    if not req_token:
-        return render_template("error.html", msg="Login failed — no token received. Please try again.")
+def callback_handler(req_token):
+    """Shared logic for handling Zerodha login callback."""
     try:
         kite = KiteConnect(api_key=API_KEY)
         data = kite.generate_session(req_token, api_secret=API_SECRET)
@@ -360,6 +362,14 @@ def callback():
     except Exception as e:
         return render_template("error.html", msg=f"Login error: {e}")
     return redirect(url_for("index"))
+
+
+@app.route("/callback")
+def callback():
+    req_token = request.args.get("request_token")
+    if not req_token:
+        return render_template("error.html", msg="Login failed — no token received. Please try again.")
+    return callback_handler(req_token)
 
 
 @app.route("/analyze", methods=["POST"])
