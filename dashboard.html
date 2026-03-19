@@ -3222,8 +3222,32 @@ let suggestionPollTimer = null;
 async function fetchSuggestions() {
   try {
     const r = await fetch('/api/suggestions');
-    if (!r.ok) return;
-    const d = await r.json();
+    const d = await r.json().catch(() => ({}));
+
+    if (!r.ok || d.status === 'error') {
+      const msg = d.message || 'Analysis failed.';
+      const needsLogin = msg.toLowerCase().includes('not logged in') || msg.toLowerCase().includes('login');
+      ['suggestionsDashboard','suggestionsFull'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = `
+          <div style="text-align:center;padding:40px 20px">
+            <div style="font-size:32px;margin-bottom:12px">${needsLogin ? '🔐' : '⚠️'}</div>
+            <div style="font-size:15px;font-weight:600;margin-bottom:8px;color:#E6EDF3">
+              ${needsLogin ? 'Login Required' : 'Analysis Error'}
+            </div>
+            <div style="color:#7D8590;font-size:13px;margin-bottom:20px">${msg}</div>
+            ${needsLogin ? `<a href="/login" style="display:inline-block;padding:10px 24px;background:#00C896;color:#0D1117;border-radius:8px;font-weight:600;text-decoration:none;font-size:14px">Login with Zerodha →</a>` : ''}
+          </div>`;
+      });
+      document.querySelectorAll('.demo-banner').forEach(el => {
+        el.textContent = needsLogin ? '🔐 Login required — click Login with Zerodha to see real data' : '⚠️ ' + msg;
+        el.style.background = 'rgba(255,71,87,0.08)';
+        el.style.borderColor = 'rgba(255,71,87,0.3)';
+        el.style.color = '#FF4757';
+      });
+      return;
+    }
 
     if (d.status === 'running') {
       showSuggestionsLoading(d.progress, d.message);
@@ -3310,6 +3334,14 @@ function renderLiveSuggestions(suggestions, avoid, time) {
     HAVELLS:'Makes fans, lights, cables, and home appliances',
     'M&M':'Makes Scorpio, Thar, XUV cars and tractors',
   };
+
+  // Update any demo banners not inside the replaced containers
+  document.querySelectorAll('.demo-banner').forEach(el => {
+    el.textContent = '✅ LIVE DATA — Connected to Zerodha Kite';
+    el.style.background = 'rgba(0,200,150,0.08)';
+    el.style.borderColor = 'rgba(0,200,150,0.3)';
+    el.style.color = '#00C896';
+  });
 
   ['suggestionsDashboard','suggestionsFull'].forEach(containerId => {
     const el = document.getElementById(containerId);
