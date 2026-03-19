@@ -414,6 +414,169 @@ def reset():
     return redirect(url_for("index"))
 
 
+# ══════════════════════════════════════════════════════════════
+#  LIVE DATA API  — called by dashboard.html every 15-30 seconds
+# ══════════════════════════════════════════════════════════════
+
+def get_kite():
+    """Return an authenticated KiteConnect instance, or None."""
+    token = load_saved_token()
+    if not token:
+        return None
+    k = KiteConnect(api_key=API_KEY)
+    k.set_access_token(token)
+    return k
+
+
+@app.route("/api/status")
+def api_status():
+    """Is the user logged in?"""
+    return jsonify({
+        "logged_in":     load_saved_token() is not None,
+        "capital":       CAPITAL,
+        "trading_style": TRADING_STYLE,
+    })
+
+
+@app.route("/api/market")
+def api_market():
+    """Live Nifty 50, Bank Nifty, India VIX."""
+    kite = get_kite()
+    if not kite:
+        return jsonify({"error": "not_logged_in"}), 401
+    try:
+        q = kite.quote(["NSE:NIFTY 50", "NSE:INDIA VIX", "NSE:NIFTY BANK"])
+
+        def index_data(key):
+            d = q.get(key, {})
+            p = d.get("last_price", 0)
+            prev = d.get("ohlc", {}).get("close", p)
+            pct  = round(((p - prev) / prev) * 100, 2) if prev else 0
+            return {"price": p, "change_pct": pct}
+
+        return jsonify({
+            "nifty":     index_data("NSE:NIFTY 50"),
+            "banknifty": index_data("NSE:NIFTY BANK"),
+            "vix":       q.get("NSE:INDIA VIX", {}).get("last_price", 0),
+            "timestamp": datetime.now().strftime("%I:%M:%S %p"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/quotes")
+def api_quotes():
+    """Live last-traded price for a comma-separated list of symbols.
+    Usage: /api/quotes?symbols=TCS,INFY,RELIANCE
+    """
+    kite = get_kite()
+    if not kite:
+        return jsonify({"error": "not_logged_in"}), 401
+    symbols = [s.strip() for s in request.args.get("symbols", "").split(",") if s.strip()]
+    if not symbols:
+        return jsonify({})
+    try:
+        data = kite.ltp([f"NSE:{s}" for s in symbols])
+        return jsonify({
+            s: {"price": data.get(f"NSE:{s}", {}).get("last_price", 0)}
+            for s in symbols
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/funds")
+def api_funds():
+    """User's available Zerodha account balance."""
+    kite = get_kite()
+    if not kite:
+        return jsonify({"error": "not_logged_in"}), 401
+    try:
+        m = kite.margins()
+        eq = m.get("equity", {})
+        return jsonify({
+            "available": eq.get("available", {}).get("live_balance", 0),
+            "used":      eq.get("utilised",  {}).get("debits", 0),
+            "total":     eq.get("net", 0),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/place-order", methods=["POST"])
+def api_place_order():
+    """Place a BUY or SELL order on NSE via Zerodha Kite Connect."""
+    kite = get_kite()
+    if not kite:
+        return jsonify({"error": "not_logged_in"}), 401
+    d = request.json or {}
+    try:
+        tt = KiteConnect.TRANSACTION_TYPE_BUY if d.get("side","BUY") == "BUY" \
+             else KiteConnect.TRANSACTION_TYPE_SELL
+        ot = KiteConnect.ORDER_TYPE_LIMIT if d.get("order_type") == "LIMIT" \
+             else KiteConnect.ORDER_TYPE_MARKET
+        prod = KiteConnect.PRODUCT_MIS if d.get("product","MIS") == "MIS" \
+               else KiteConnect.PRODUCT_CNC
+
+        order_id = kite.place_order(
+            variety          = KiteConnect.VARIETY_REGULAR,
+            exchange         = KiteConnect.EXCHANGE_NSE,
+            tradingsymbol    = d["symbol"],
+            transaction_type = tt,
+            quantity         = int(d["quantity"]),
+            product          = prod,
+            order_type       = ot,
+            price            = float(d.get("price", 0)) if ot == KiteConnect.ORDER_TYPE_LIMIT else None,
+            validity         = KiteConnect.VALIDITY_DAY,
+            tag              = "nse-trader",
+        )
+        return jsonify({"success": True, "order_id": order_id})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@app.route("/api/orders")
+def api_orders():
+    """All orders placed today."""
+    kite = get_kite()
+    if not kite:
+        return jsonify({"error": "not_logged_in"}), 401
+    try:
+        return jsonify([{
+            "order_id":        o.get("order_id"),
+            "symbol":          o.get("tradingsymbol"),
+            "side":            o.get("transaction_type"),
+            "quantity":        o.get("quantity"),
+            "price":           o.get("average_price") or o.get("price", 0),
+            "status":          o.get("status"),
+            "order_type":      o.get("order_type"),
+            "product":         o.get("product"),
+            "time":            str(o.get("order_timestamp", "")),
+        } for o in kite.orders()])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/positions")
+def api_positions():
+    """Current open intraday positions."""
+    kite = get_kite()
+    if not kite:
+        return jsonify({"error": "not_logged_in"}), 401
+    try:
+        positions = kite.positions().get("day", [])
+        return jsonify([{
+            "symbol":    p.get("tradingsymbol"),
+            "quantity":  p.get("quantity"),
+            "buy_price": p.get("average_price"),
+            "ltp":       p.get("last_price"),
+            "pnl":       p.get("pnl"),
+            "product":   p.get("product"),
+        } for p in positions if p.get("quantity", 0) != 0])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

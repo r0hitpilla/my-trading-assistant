@@ -1844,21 +1844,21 @@ body {
   <div class="market-indices">
     <div class="index-item">
       <span class="index-name">Nifty 50:</span>
-      <span class="index-value mono">24,315.60</span>
-      <span class="index-change up">▲ +0.82%</span>
+      <span class="index-value mono" id="liveNiftyPrice">—</span>
+      <span class="index-change" id="liveNiftyChange">—</span>
     </div>
     <div class="index-item">
       <span class="index-name">Bank Nifty:</span>
-      <span class="index-value mono">52,140.20</span>
-      <span class="index-change down">▼ −0.31%</span>
+      <span class="index-value mono" id="liveBNPrice">—</span>
+      <span class="index-change" id="liveBNChange">—</span>
     </div>
     <div class="index-item">
       <span class="index-name">VIX:</span>
-      <span class="index-value mono vix-calm">13.4 🟢 CALM</span>
+      <span class="index-value mono" id="liveVixBadge">—</span>
     </div>
     <div class="index-item">
       <span class="index-name">Market:</span>
-      <span class="index-value market-open">🟢 OPEN</span>
+      <span class="index-value" id="liveMarketStatus">—</span>
     </div>
   </div>
   <button class="refresh-btn" id="refreshBtn" title="Refresh data">🔄</button>
@@ -3014,6 +3014,548 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
+</script>
+
+<!-- ============================================================
+     ORDER PLACEMENT MODAL (Zerodha integration)
+     ============================================================ -->
+<div class="modal-overlay" id="orderModal" style="display:none">
+  <div class="modal-box" style="max-width:460px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <h3 style="margin:0;font-size:18px">Place Order on Zerodha</h3>
+      <button id="orderModalClose" style="background:none;border:none;color:#7D8590;font-size:20px;cursor:pointer">✕</button>
+    </div>
+
+    <!-- Login warning -->
+    <div id="orderLoginWarning" style="display:none;background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:#FF4757">
+      ⚠️ You are not logged into Zerodha. <a href="/login" style="color:#00C896">Login here</a> first, then come back to place orders.
+    </div>
+
+    <!-- Stock summary -->
+    <div style="background:#0D1117;border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div id="orderStockName" style="font-size:16px;font-weight:600"></div>
+          <div id="orderStockTicker" style="font-size:12px;color:#7D8590;font-family:'DM Mono',monospace"></div>
+        </div>
+        <div style="text-align:right">
+          <div id="orderLivePrice" style="font-size:22px;font-weight:700;font-family:'DM Mono',monospace;color:#00C896"></div>
+          <div id="orderPriceChange" style="font-size:12px;color:#7D8590"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Order form -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div>
+        <label style="font-size:11px;color:#7D8590;display:block;margin-bottom:4px">ORDER TYPE</label>
+        <select id="orderType" style="width:100%;background:#0D1117;color:#E6EDF3;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px;font-size:13px">
+          <option value="MARKET">Market (current price)</option>
+          <option value="LIMIT">Limit (my price)</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:#7D8590;display:block;margin-bottom:4px">PRODUCT</label>
+        <select id="orderProduct" style="width:100%;background:#0D1117;color:#E6EDF3;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px;font-size:13px">
+          <option value="MIS">Intraday (MIS) — sell same day</option>
+          <option value="CNC">Delivery (CNC) — keep for days</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div>
+        <label style="font-size:11px;color:#7D8590;display:block;margin-bottom:4px">QUANTITY (shares)</label>
+        <input id="orderQty" type="number" min="1" style="width:100%;background:#0D1117;color:#E6EDF3;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px;font-size:13px;box-sizing:border-box"/>
+      </div>
+      <div id="limitPriceGroup" style="display:none">
+        <label style="font-size:11px;color:#7D8590;display:block;margin-bottom:4px">LIMIT PRICE (₹)</label>
+        <input id="orderLimitPrice" type="number" step="0.05" style="width:100%;background:#0D1117;color:#E6EDF3;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px;font-size:13px;box-sizing:border-box"/>
+      </div>
+    </div>
+
+    <!-- Cost summary -->
+    <div id="orderCostSummary" style="background:rgba(0,200,150,0.06);border:1px solid rgba(0,200,150,0.15);border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="color:#7D8590">Estimated cost</span>
+        <span id="orderEstCost" style="font-family:'DM Mono',monospace;font-weight:600">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="color:#7D8590">Stop loss at</span>
+        <span id="orderStopLossDisplay" style="font-family:'DM Mono',monospace;color:#FF4757">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="color:#7D8590">Max loss if SL hits</span>
+        <span id="orderMaxLoss" style="font-family:'DM Mono',monospace;color:#FF4757">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:#7D8590">Target 1 profit</span>
+        <span id="orderT1Profit" style="font-family:'DM Mono',monospace;color:#00C896">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">
+        <span style="color:#7D8590">Your Zerodha balance</span>
+        <span id="orderAvailBalance" style="font-family:'DM Mono',monospace;font-weight:600">Fetching…</span>
+      </div>
+    </div>
+
+    <!-- Important reminder -->
+    <div style="background:rgba(255,165,2,0.08);border:1px solid rgba(255,165,2,0.2);border-radius:8px;padding:10px;margin-bottom:16px;font-size:12px;color:#FFA502">
+      ⚠️ <strong>After placing order:</strong> Immediately set a Stop Loss on Zerodha Kite at <span id="orderStopLossReminder" style="font-family:'DM Mono',monospace">—</span> to protect yourself.
+    </div>
+
+    <div style="display:flex;gap:10px">
+      <button id="orderCancelBtn" style="flex:1;padding:12px;background:transparent;color:#7D8590;border:1px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;font-size:14px">Cancel</button>
+      <button id="orderConfirmBtn" style="flex:2;padding:12px;background:#00C896;color:#0D1117;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700">
+        ✓ Place Order on Zerodha
+      </button>
+    </div>
+
+    <p style="text-align:center;font-size:11px;color:#7D8590;margin-top:12px;margin-bottom:0">
+      Order will be placed on NSE via your Zerodha account. The money will be deducted from your Zerodha balance.
+    </p>
+  </div>
+</div>
+
+<!-- Order Success overlay -->
+<div class="modal-overlay" id="orderSuccessModal" style="display:none">
+  <div class="modal-box" style="max-width:380px;text-align:center">
+    <div style="font-size:56px;margin-bottom:16px">✅</div>
+    <h3 style="margin:0 0 8px">Order Placed!</h3>
+    <p style="color:#7D8590;font-size:14px;margin-bottom:16px" id="orderSuccessMsg"></p>
+    <div style="background:#0D1117;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px" id="orderSuccessDetails"></div>
+    <div style="background:rgba(255,165,2,0.08);border:1px solid rgba(255,165,2,0.2);border-radius:8px;padding:10px;margin-bottom:20px;font-size:12px;color:#FFA502;text-align:left">
+      ⚠️ <strong>Next step:</strong> Open Zerodha Kite and place a Stop Loss order immediately to protect your money.
+    </div>
+    <button onclick="document.getElementById('orderSuccessModal').style.display='none';switchTab('portfolio')" style="width:100%;padding:12px;background:#00C896;color:#0D1117;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px">
+      View in Portfolio →
+    </button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   REAL-TIME DATA — connects dashboard to Zerodha API
+   ============================================================ */
+
+const LIVE = {
+  symbol: null, price: null, stopLoss: null, target1: null, target2: null
+};
+
+/* ── Is app connected to backend? ── */
+async function checkBackend() {
+  try {
+    const r = await fetch('/api/status', { signal: AbortSignal.timeout(3000) });
+    return r.ok;
+  } catch { return false; }
+}
+
+/* ── Fetch live market data every 30s ── */
+async function fetchMarketData() {
+  try {
+    const r = await fetch('/api/market');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.error) return;
+
+    // Nifty
+    const np = d.nifty.price, nc = d.nifty.change_pct;
+    document.getElementById('liveNiftyPrice').textContent = np.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+    const nEl = document.getElementById('liveNiftyChange');
+    nEl.textContent = (nc >= 0 ? '▲ +' : '▼ ') + nc + '%';
+    nEl.className = 'index-change ' + (nc >= 0 ? 'up' : 'down');
+
+    // Bank Nifty
+    const bp = d.banknifty.price, bc = d.banknifty.change_pct;
+    document.getElementById('liveBNPrice').textContent = bp.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+    const bEl = document.getElementById('liveBNChange');
+    bEl.textContent = (bc >= 0 ? '▲ +' : '▼ ') + bc + '%';
+    bEl.className = 'index-change ' + (bc >= 0 ? 'up' : 'down');
+
+    // VIX
+    const vix = d.vix;
+    let vixLabel, vixClass;
+    if (vix < 15)       { vixLabel = `${vix} 🟢 CALM`;    vixClass = 'vix-calm'; }
+    else if (vix < 20)  { vixLabel = `${vix} 🟡 NERVOUS`; vixClass = ''; }
+    else                { vixLabel = `${vix} 🔴 SCARED`;  vixClass = ''; }
+    const vEl = document.getElementById('liveVixBadge');
+    vEl.textContent = vixLabel;
+    vEl.className = 'index-value mono ' + vixClass;
+
+    // Also update VIX card
+    const vixCard = document.getElementById('vixValue');
+    if (vixCard) vixCard.textContent = vix;
+    const vixBarEl = document.getElementById('vixBar');
+    if (vixBarEl) vixBarEl.style.width = Math.min((vix / 40) * 100, 100) + '%';
+
+    // Market status
+    const now = new Date();
+    const h = now.getHours(), m = now.getMinutes(), total = h * 60 + m;
+    const isOpen = total >= 9*60+15 && total < 15*60+30 && now.getDay() >= 1 && now.getDay() <= 5;
+    const msEl = document.getElementById('liveMarketStatus');
+    msEl.textContent = isOpen ? '🟢 OPEN' : '🔴 CLOSED';
+    msEl.style.color = isOpen ? '#00C896' : '#FF4757';
+
+    // Update timestamp
+    document.getElementById('navTimestamp').textContent = 'Live: ' + d.timestamp;
+
+    // Remove demo banner if live data loaded
+    document.querySelectorAll('.demo-banner').forEach(el => {
+      el.textContent = '✅ LIVE DATA — Connected to Zerodha Kite';
+      el.style.background = 'rgba(0,200,150,0.08)';
+      el.style.borderColor = 'rgba(0,200,150,0.3)';
+      el.style.color = '#00C896';
+    });
+
+  } catch(e) { console.log('Market data fetch failed:', e); }
+}
+
+/* ── Fetch live quotes for suggestion stock prices ── */
+async function fetchSuggestionPrices() {
+  try {
+    const r = await fetch('/api/quotes?symbols=TCS,SUNPHARMA,HDFCBANK,RELIANCE,INFY,ICICIBANK,TATAMOTORS,WIPRO,MARUTI,BAJFINANCE,SBIN');
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.error) return;
+
+    // Update any price element marked with data-symbol
+    document.querySelectorAll('[data-live-price]').forEach(el => {
+      const sym = el.getAttribute('data-live-price');
+      if (data[sym] && data[sym].price) {
+        el.textContent = '₹' + data[sym].price.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+      }
+    });
+  } catch(e) {}
+}
+
+/* ── Fetch user funds ── */
+async function fetchFunds() {
+  try {
+    const r = await fetch('/api/funds');
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (d.error) return null;
+    return d.available;
+  } catch { return null; }
+}
+
+/* ── Fetch and render portfolio (orders + positions) ── */
+async function fetchPortfolio() {
+  try {
+    const [ordersRes, positionsRes] = await Promise.all([
+      fetch('/api/orders'),
+      fetch('/api/positions')
+    ]);
+    const orders    = await ordersRes.json();
+    const positions = await positionsRes.json();
+    if (orders.error && positions.error) return;
+
+    renderPortfolio(orders, positions);
+  } catch(e) {}
+}
+
+function renderPortfolio(orders, positions) {
+  const section = document.getElementById('section-portfolio');
+  if (!section) return;
+
+  const hasData = (Array.isArray(orders) && orders.length > 0) ||
+                  (Array.isArray(positions) && positions.length > 0);
+
+  if (!hasData) return; // Keep empty state
+
+  let html = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div>
+        <div class="section-heading">Your Trades</div>
+        <div class="section-subtext">Live positions and orders from your Zerodha account</div>
+      </div>
+      <button class="add-trade-btn" onclick="showOrderModal(null)">＋ New Order</button>
+    </div>`;
+
+  // Positions
+  if (Array.isArray(positions) && positions.length > 0) {
+    html += `<div class="section-heading" style="font-size:14px;margin-bottom:12px">Open Positions</div>`;
+    positions.forEach(p => {
+      const pnl = parseFloat(p.pnl || 0);
+      const pnlColor = pnl >= 0 ? '#00C896' : '#FF4757';
+      const pnlSign  = pnl >= 0 ? '+' : '';
+      html += `
+        <div class="wl-row" style="margin-bottom:8px;cursor:default">
+          <div class="wl-col-name">
+            <div class="wl-name">${p.symbol}</div>
+            <div class="wl-ticker">${p.product}</div>
+          </div>
+          <div class="wl-col-price mono">₹${parseFloat(p.ltp||0).toFixed(2)}</div>
+          <div class="wl-col-change">
+            <span style="color:#7D8590;font-size:12px">Avg ₹${parseFloat(p.buy_price||0).toFixed(2)}</span>
+          </div>
+          <div class="wl-col-signal">
+            <span class="signal-pill" style="background:${pnl>=0?'rgba(0,200,150,0.15)':'rgba(255,71,87,0.15)'};color:${pnlColor};border-color:${pnlColor}">
+              ${p.quantity} shares
+            </span>
+          </div>
+          <div class="wl-col-rsi" style="color:${pnlColor};font-family:'DM Mono',monospace;font-weight:600">
+            ${pnlSign}₹${Math.abs(pnl).toFixed(2)}
+          </div>
+          <div class="wl-col-pattern"></div>
+          <div class="wl-col-action">
+            <button class="analyse-btn" onclick="openSellModal('${p.symbol}',${p.quantity},${p.ltp})" style="background:rgba(255,71,87,0.15);color:#FF4757;border-color:rgba(255,71,87,0.3)">SELL</button>
+          </div>
+        </div>`;
+    });
+  }
+
+  // Today's orders
+  if (Array.isArray(orders) && orders.length > 0) {
+    html += `<div class="section-heading" style="font-size:14px;margin:20px 0 12px">Today's Orders</div>`;
+    orders.forEach(o => {
+      const statusColors = {
+        'COMPLETE': '#00C896', 'REJECTED': '#FF4757',
+        'CANCELLED': '#7D8590', 'OPEN': '#FFA502', 'TRIGGER PENDING': '#FFA502'
+      };
+      const col = statusColors[o.status] || '#7D8590';
+      html += `
+        <div class="wl-row" style="margin-bottom:8px;cursor:default">
+          <div class="wl-col-name">
+            <div class="wl-name">${o.symbol}</div>
+            <div class="wl-ticker">${o.side} · ${o.order_type}</div>
+          </div>
+          <div class="wl-col-price mono">₹${parseFloat(o.price||0).toFixed(2)}</div>
+          <div class="wl-col-change"><span style="color:#7D8590;font-size:12px">Qty ${o.quantity}</span></div>
+          <div class="wl-col-signal">
+            <span class="signal-pill" style="background:rgba(0,0,0,0.3);color:${col};border-color:${col}">${o.status}</span>
+          </div>
+          <div class="wl-col-rsi" style="color:#7D8590;font-size:11px">${o.product}</div>
+          <div class="wl-col-pattern" style="font-size:11px;color:#7D8590">${o.time ? o.time.slice(11,16) : ''}</div>
+          <div class="wl-col-action"></div>
+        </div>`;
+    });
+  }
+
+  // Replace empty state
+  const empty = section.querySelector('.empty-state');
+  if (empty) empty.remove();
+  const existing = section.querySelector('#portfolioLive');
+  if (existing) existing.innerHTML = html;
+  else {
+    const div = document.createElement('div');
+    div.id = 'portfolioLive';
+    div.innerHTML = html;
+    section.insertBefore(div, section.querySelector('.add-trade-btn')?.parentElement || section.firstChild);
+  }
+}
+
+/* ============================================================
+   ORDER MODAL
+   ============================================================ */
+
+function showOrderModal(stockData) {
+  /* stockData = { name, ticker, price, stopLoss, target1, target2 } */
+  if (!stockData) {
+    stockData = {
+      name: '', ticker: '', price: 0,
+      stopLoss: 0, target1: 0, target2: 0
+    };
+  }
+
+  LIVE.symbol   = stockData.ticker;
+  LIVE.price    = stockData.price;
+  LIVE.stopLoss = stockData.stopLoss;
+  LIVE.target1  = stockData.target1;
+  LIVE.target2  = stockData.target2;
+
+  document.getElementById('orderStockName').textContent   = stockData.name;
+  document.getElementById('orderStockTicker').textContent = stockData.ticker + ' · NSE';
+  document.getElementById('orderLivePrice').textContent   = '₹' + stockData.price.toLocaleString('en-IN', {minimumFractionDigits:2});
+  document.getElementById('orderStopLossDisplay').textContent   = '₹' + stockData.stopLoss;
+  document.getElementById('orderStopLossReminder').textContent  = '₹' + stockData.stopLoss;
+
+  // Suggested qty based on ₹400 max
+  const suggestedQty = Math.max(1, Math.floor(400 / stockData.price));
+  document.getElementById('orderQty').value = suggestedQty;
+
+  updateOrderCost();
+
+  // Fetch live funds
+  fetchFunds().then(balance => {
+    const el = document.getElementById('orderAvailBalance');
+    if (balance !== null) {
+      el.textContent = '₹' + parseFloat(balance).toLocaleString('en-IN', {minimumFractionDigits:2});
+      el.style.color = balance >= stockData.price * suggestedQty ? '#00C896' : '#FF4757';
+    } else {
+      el.textContent = 'Login required';
+      el.style.color = '#FF4757';
+      document.getElementById('orderLoginWarning').style.display = 'block';
+    }
+  });
+
+  // Fetch latest live price
+  if (stockData.ticker) {
+    fetch('/api/quotes?symbols=' + stockData.ticker)
+      .then(r => r.json()).then(d => {
+        if (d[stockData.ticker]?.price) {
+          const lp = d[stockData.ticker].price;
+          LIVE.price = lp;
+          document.getElementById('orderLivePrice').textContent = '₹' + lp.toLocaleString('en-IN', {minimumFractionDigits:2});
+          document.getElementById('orderPriceChange').textContent = 'Live price from Zerodha';
+          updateOrderCost();
+        }
+      }).catch(() => {});
+  }
+
+  document.getElementById('orderModal').style.display = 'flex';
+}
+
+function openSellModal(symbol, qty, price) {
+  // Simplified sell flow — opens Zerodha directly for now
+  showToast(`To sell ${symbol}, open Zerodha Kite and place a SELL order.`);
+}
+
+function updateOrderCost() {
+  const qty   = parseInt(document.getElementById('orderQty').value) || 0;
+  const price = LIVE.price || 0;
+  const sl    = LIVE.stopLoss || price * 0.985;
+  const t1    = LIVE.target1  || price * 1.02;
+
+  const cost    = (price * qty).toFixed(2);
+  const maxLoss = ((price - sl) * qty).toFixed(2);
+  const profit  = ((t1 - price) * qty).toFixed(2);
+
+  document.getElementById('orderEstCost').textContent  = '₹' + parseFloat(cost).toLocaleString('en-IN', {minimumFractionDigits:2});
+  document.getElementById('orderMaxLoss').textContent  = '-₹' + maxLoss;
+  document.getElementById('orderT1Profit').textContent = '+₹' + profit;
+}
+
+async function placeOrder() {
+  const btn = document.getElementById('orderConfirmBtn');
+  btn.textContent = '⏳ Placing order…';
+  btn.disabled = true;
+
+  const payload = {
+    symbol:     LIVE.symbol,
+    side:       'BUY',
+    quantity:   parseInt(document.getElementById('orderQty').value),
+    order_type: document.getElementById('orderType').value,
+    product:    document.getElementById('orderProduct').value,
+    price:      parseFloat(document.getElementById('orderLimitPrice').value) || 0,
+  };
+
+  try {
+    const r = await fetch('/api/place-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+
+    if (d.success) {
+      document.getElementById('orderModal').style.display = 'none';
+      document.getElementById('orderSuccessMsg').textContent =
+        `Your order to buy ${payload.quantity} shares of ${LIVE.symbol} has been sent to NSE.`;
+      document.getElementById('orderSuccessDetails').innerHTML = `
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="color:#7D8590">Order ID</span>
+          <span style="font-family:'DM Mono',monospace">${d.order_id}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="color:#7D8590">Stock</span>
+          <span>${LIVE.symbol}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="color:#7D8590">Quantity</span>
+          <span>${payload.quantity} shares</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:#7D8590">Stop Loss to set</span>
+          <span style="color:#FF4757;font-family:'DM Mono',monospace">₹${LIVE.stopLoss}</span>
+        </div>`;
+      document.getElementById('orderSuccessModal').style.display = 'flex';
+      setTimeout(fetchPortfolio, 3000); // Refresh portfolio
+    } else {
+      showToast('Order failed: ' + (d.error || 'Unknown error'));
+    }
+  } catch(e) {
+    showToast('Could not connect. Are you logged into Zerodha?');
+  }
+
+  btn.textContent = '✓ Place Order on Zerodha';
+  btn.disabled = false;
+}
+
+/* ── Wire up BUY buttons on suggestion cards ── */
+function wireBuyButtons() {
+  const stocks = [
+    { name:'Tata Consultancy Services', ticker:'TCS',      price:3842.50, stopLoss:3782, target1:3918, target2:3996 },
+    { name:'Sun Pharmaceutical',         ticker:'SUNPHARMA',price:1276.80, stopLoss:1257, target1:1302, target2:1328 },
+    { name:'HDFC Bank',                  ticker:'HDFCBANK', price:1534.20, stopLoss:1511, target1:1565, target2:1596 },
+  ];
+  document.querySelectorAll('[data-order-symbol]').forEach(btn => {
+    const sym   = btn.getAttribute('data-order-symbol');
+    const stock = stocks.find(s => s.ticker === sym);
+    if (stock) btn.addEventListener('click', () => showOrderModal(stock));
+  });
+}
+
+/* ── Order type toggle ── */
+document.getElementById('orderType')?.addEventListener('change', function() {
+  document.getElementById('limitPriceGroup').style.display =
+    this.value === 'LIMIT' ? 'block' : 'none';
+});
+
+document.getElementById('orderQty')?.addEventListener('input', updateOrderCost);
+
+/* ── Close buttons ── */
+['orderModalClose','orderCancelBtn'].forEach(id => {
+  document.getElementById(id)?.addEventListener('click', () => {
+    document.getElementById('orderModal').style.display = 'none';
+  });
+});
+document.getElementById('orderConfirmBtn')?.addEventListener('click', placeOrder);
+
+/* ── Close on backdrop click ── */
+document.getElementById('orderModal')?.addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
+
+/* ── Add data-order-symbol to suggestion BUY/HOLD buttons ── */
+function patchSuggestionButtons() {
+  const map = { 'TCS': 0, 'SUNPHARMA': 1, 'HDFCBANK': 2 };
+  document.querySelectorAll('.signal-action-btn').forEach((btn, i) => {
+    const tickers = ['TCS', 'SUNPHARMA', 'HDFCBANK'];
+    if (tickers[i]) btn.setAttribute('data-order-symbol', tickers[i]);
+  });
+  wireBuyButtons();
+}
+
+/* ── Refresh button ── */
+const origRefresh = document.getElementById('refreshBtn')?.onclick;
+document.getElementById('refreshBtn')?.addEventListener('click', () => {
+  fetchMarketData();
+  fetchSuggestionPrices();
+  fetchPortfolio();
+});
+
+/* ── Start live data ── */
+async function startLiveData() {
+  const connected = await checkBackend();
+  if (!connected) {
+    console.log('Backend not reachable — running in demo mode');
+    return;
+  }
+  // Initial fetch
+  await fetchMarketData();
+  fetchSuggestionPrices();
+  fetchPortfolio();
+
+  // Patch BUY buttons after suggestions render
+  setTimeout(patchSuggestionButtons, 600);
+
+  // Poll every 30 seconds
+  setInterval(fetchMarketData,        30000);
+  setInterval(fetchSuggestionPrices,  15000);
+  setInterval(fetchPortfolio,         60000);
+}
+
+startLiveData();
 </script>
 </body>
 </html>
