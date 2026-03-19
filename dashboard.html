@@ -3103,15 +3103,21 @@ if (document.readyState === 'loading') {
       ⚠️ <strong>After placing order:</strong> Immediately set a Stop Loss on Zerodha Kite at <span id="orderStopLossReminder" style="font-family:'DM Mono',monospace">—</span> to protect yourself.
     </div>
 
+    <!-- Primary: Go to Zerodha -->
+    <button id="orderZerodhaBtn" onclick="openOnZerodha()" style="width:100%;padding:14px;background:#00C896;color:#0D1117;border:none;border-radius:8px;cursor:pointer;font-size:15px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px">
+      <span>Buy on Zerodha Kite</span> <span style="font-size:18px">↗</span>
+    </button>
+
     <div style="display:flex;gap:10px">
-      <button id="orderCancelBtn" style="flex:1;padding:12px;background:transparent;color:#7D8590;border:1px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;font-size:14px">Cancel</button>
-      <button id="orderConfirmBtn" style="flex:2;padding:12px;background:#00C896;color:#0D1117;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700">
-        ✓ Place Order on Zerodha
+      <button id="orderCancelBtn" style="flex:1;padding:11px;background:transparent;color:#7D8590;border:1px solid rgba(255,255,255,0.1);border-radius:8px;cursor:pointer;font-size:13px">Cancel</button>
+      <button id="orderConfirmBtn" style="flex:2;padding:11px;background:rgba(0,200,150,0.1);color:#00C896;border:1px solid rgba(0,200,150,0.3);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600">
+        ⚡ Place via API (instant)
       </button>
     </div>
 
     <p style="text-align:center;font-size:11px;color:#7D8590;margin-top:12px;margin-bottom:0">
-      Order will be placed on NSE via your Zerodha account. The money will be deducted from your Zerodha balance.
+      "Buy on Zerodha Kite" opens Zerodha in a new tab for this stock.<br>
+      "Place via API" places the order instantly through your connected account.
     </p>
   </div>
 </div>
@@ -3423,6 +3429,32 @@ function updateOrderCost() {
   document.getElementById('orderEstCost').textContent  = '₹' + parseFloat(cost).toLocaleString('en-IN', {minimumFractionDigits:2});
   document.getElementById('orderMaxLoss').textContent  = '-₹' + maxLoss;
   document.getElementById('orderT1Profit').textContent = '+₹' + profit;
+}
+
+/* ── Open Zerodha Kite directly for that stock ── */
+function openOnZerodha() {
+  const ticker  = LIVE.symbol;
+  const qty     = parseInt(document.getElementById('orderQty').value) || 1;
+  const product = document.getElementById('orderProduct').value;      // MIS or CNC
+  const otype   = document.getElementById('orderType').value;         // MARKET or LIMIT
+  const price   = LIVE.price || 0;
+
+  // Zerodha Kite direct order URL — pre-fills the buy ticket
+  const zerodhaUrl = `https://kite.zerodha.com/?action=order`
+    + `&tradingsymbol=${encodeURIComponent(ticker)}`
+    + `&exchange=NSE`
+    + `&transaction_type=BUY`
+    + `&quantity=${qty}`
+    + `&product=${product}`
+    + `&order_type=${otype}`
+    + (otype === 'LIMIT' ? `&price=${price}` : '');
+
+  // Open Zerodha in a new tab
+  window.open(zerodhaUrl, '_blank');
+
+  // Close our modal and show reminder
+  document.getElementById('orderModal').style.display = 'none';
+  showToast(`Zerodha opened for ${ticker}. Search the stock and confirm your order there.`);
 }
 
 async function placeOrder() {
