@@ -14,7 +14,7 @@ import threading
 from datetime import datetime, timedelta, date
 
 import numpy as np
-from flask import Flask, render_template, redirect, request, session, url_for, jsonify
+from flask import Flask, render_template, redirect, request, session, url_for, jsonify, send_from_directory
 from kiteconnect import KiteConnect
 
 from config import API_KEY, API_SECRET, CAPITAL, TRADING_STYLE
@@ -338,13 +338,22 @@ def index():
     req_token = request.args.get("request_token")
     if req_token:
         return callback_handler(req_token)
+    return redirect(url_for("dashboard"))
 
+
+@app.route("/app")
+def app_home():
     token = load_saved_token()
     logged_in = token is not None
     return render_template("index.html",
                            logged_in=logged_in,
                            analysis=analysis,
                            capital=CAPITAL)
+
+
+@app.route("/dashboard")
+def dashboard():
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
 
 
 @app.route("/login")
