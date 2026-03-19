@@ -3215,18 +3215,260 @@ async function fetchMarketData() {
   } catch(e) { console.log('Market data fetch failed:', e); }
 }
 
-/* ── Fetch live quotes for suggestion stock prices ── */
+/* ── Fetch real suggestions from Zerodha analysis ── */
+let suggestionsLoaded = false;
+let suggestionPollTimer = null;
+
+async function fetchSuggestions() {
+  try {
+    const r = await fetch('/api/suggestions');
+    if (!r.ok) return;
+    const d = await r.json();
+
+    if (d.status === 'running') {
+      showSuggestionsLoading(d.progress, d.message);
+      suggestionPollTimer = setTimeout(fetchSuggestions, 4000);
+      return;
+    }
+
+    if (d.status === 'done' && d.suggestions?.length) {
+      clearTimeout(suggestionPollTimer);
+      suggestionsLoaded = true;
+      renderLiveSuggestions(d.suggestions, d.avoid, d.time);
+      // Update STOCK_DATA for order modal
+      d.suggestions.forEach(s => {
+        STOCK_DATA[s.symbol] = {
+          name: s.name, ticker: s.symbol, price: s.price,
+          stopLoss: s.stop_loss, target1: s.target1, target2: s.target2
+        };
+      });
+      return;
+    }
+
+    if (d.status === 'idle') {
+      // Will auto-start on next call; poll again
+      suggestionPollTimer = setTimeout(fetchSuggestions, 5000);
+    }
+  } catch(e) {}
+}
+
+function showSuggestionsLoading(progress, message) {
+  ['suggestionsDashboard','suggestionsFull'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = `
+      <div style="text-align:center;padding:40px 20px">
+        <div style="font-size:32px;margin-bottom:16px">🔍</div>
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px">Scanning the market for you…</div>
+        <div style="color:#7D8590;font-size:13px;margin-bottom:16px">${message || 'Analyzing 50 stocks...'}</div>
+        <div style="background:#0D1117;border-radius:8px;height:8px;overflow:hidden;max-width:320px;margin:0 auto">
+          <div style="height:100%;background:linear-gradient(90deg,#00C896,#00a07a);border-radius:8px;transition:width 0.5s;width:${progress||5}%"></div>
+        </div>
+        <div style="color:#7D8590;font-size:12px;margin-top:8px">${progress||5}% complete — this takes 1–2 minutes</div>
+      </div>`;
+  });
+}
+
+function renderLiveSuggestions(suggestions, avoid, time) {
+  const COMPANY_DESCS = {
+    RELIANCE:'Makes fuel, runs Jio telecom and Reliance retail stores across India',
+    TCS:'India\'s largest software company — builds tech solutions for banks and airlines worldwide',
+    HDFCBANK:'One of India\'s largest private banks — loans, savings accounts, and credit cards',
+    INFY:'Provides software and technology services to global companies',
+    ICICIBANK:'Large private bank offering loans, savings accounts, and insurance',
+    ITC:'Makes cigarettes, Bingo snacks, Aashirvaad atta, hotels, and paper products',
+    SBIN:'India\'s largest government bank with branches across the country',
+    BHARTIARTL:'Runs Airtel mobile, broadband, and DTH services across India',
+    KOTAKBANK:'Private bank offering banking, insurance, and investment products',
+    LT:'Builds large infrastructure — bridges, buildings, and power plants',
+    AXISBANK:'Private bank providing loans, credit cards, and savings accounts',
+    BAJFINANCE:'Provides loans for buying electronics, vehicles, and homes',
+    MARUTI:'Makes and sells the most popular cars in India — Alto, Swift, Brezza',
+    TITAN:'Makes Titan watches and Tanishq gold jewellery',
+    SUNPHARMA:'Makes medicines and drugs sold in India and worldwide',
+    NTPC:'Government company that generates electricity for India',
+    WIPRO:'Provides IT and software services to global companies',
+    HCLTECH:'Provides IT services and software products globally',
+    TATAMOTORS:'Makes Nexon, Harrier, trucks, and Jaguar Land Rover vehicles',
+    COALINDIA:'Government company that mines and sells coal across India',
+    TATASTEEL:'Makes steel used in construction, cars, and manufacturing',
+    ADANIPORTS:'Owns and operates major ports and logistics across India',
+    CIPLA:'Makes affordable medicines and generic drugs',
+    DRREDDY:'Makes medicines for India and international markets',
+    BPCL:'Government oil company — runs petrol pumps and refineries',
+    INDUSINDBK:'Private bank offering retail and corporate banking services',
+    HINDALCO:'Makes aluminium and copper products',
+    HEROMOTOCO:'India\'s largest two-wheeler maker',
+    'BAJAJ-AUTO':'Makes Pulsar bikes and Bajaj three-wheelers',
+    TATAPOWER:'Generates and distributes electricity across India',
+    VEDL:'Mines zinc, copper, aluminium, and oil',
+    DLF:'India\'s largest real estate company',
+    GAIL:'Government company that transports natural gas',
+    IOC:'Government oil company — largest fuel seller in India',
+    MUTHOOTFIN:'Provides gold loans — give your gold, get cash instantly',
+    LUPIN:'Makes medicines and generic drugs',
+    HAVELLS:'Makes fans, lights, cables, and home appliances',
+    'M&M':'Makes Scorpio, Thar, XUV cars and tractors',
+  };
+
+  ['suggestionsDashboard','suggestionsFull'].forEach(containerId => {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+
+    let html = `
+      <div class="suggestions-heading-block" style="margin-bottom:20px">
+        <div class="section-heading">Today's Suggestions for You</div>
+        <div class="section-subtext">Based on your profile · Live data from Zerodha · Last scanned: ${time}</div>
+      </div>
+      <div style="background:rgba(0,200,150,0.08);border:1px solid rgba(0,200,150,0.2);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:13px;color:#00C896">
+        ✅ LIVE DATA — Real-time analysis from Zerodha Kite Connect
+      </div>`;
+
+    suggestions.forEach((s, i) => {
+      const isHold   = s.score < 2;
+      const action   = isHold ? 'HOLD' : 'BUY';
+      const chg      = s.change_pct;
+      const chgDir   = chg >= 0 ? 'up' : 'down';
+      const desc     = COMPANY_DESCS[s.symbol] || `Listed on NSE India · ${s.symbol}`;
+      const conf     = s.confidence || 72;
+      const circumference = 2 * Math.PI * 28;
+      const ringId   = `ring_live_${containerId}_${i}`;
+      const pctId    = `pct_live_${containerId}_${i}`;
+
+      const signals = [
+        { label:'RSI',      value: s.rsi ? `${s.rsi} · ${s.rsi_ok ? 'Safe Zone' : 'Watch'}` : 'N/A', icon: s.rsi_ok ? '✅':'⚠️', tip:'RSI measures if a stock is being bought too much or too little. 45–65 is the safe zone.' },
+        { label:'Volume',   value: `${s.volume_ratio}× Normal`,   icon: s.volume_ok ? '📈':'📊',   tip:`Volume is ${s.volume_ratio}x the normal amount. ${s.volume_ok ? 'Unusual buying activity — something is happening.' : 'Normal volume today.'}` },
+        { label:'Trend',    value: s.above_ma50 ? 'Upward' : 'Downward', icon: s.above_ma50 ? '✅':'⚠️', tip:`Price is ${s.above_ma50 ? 'above' : 'below'} its 50-day average of ₹${s.ma50}. ${s.above_ma50 ? 'Healthy uptrend.' : 'Be cautious.'}` },
+        { label:'MA 50',    value: `₹${s.ma50}`,                  icon: s.above_ma50 ? '✅':'⚠️', tip:'The average price over the last 50 days. If current price is above this, the stock is in a healthy uptrend.' },
+        { label:'Score',    value: `${s.score}/3 signals`,         icon: s.score >= 2 ? '✅':'⚠️', tip:'How many of our 3 key checks this stock passed. 3/3 is ideal, 2/3 is acceptable.' },
+      ];
+
+      html += `
+      <div class="stock-suggestion-card ${isHold ? 'hold-card' : ''}">
+        <div class="stock-top-row">
+          <div class="stock-name-block">
+            <div class="stock-name">${s.name}</div>
+            <div class="stock-meta">
+              <span class="stock-ticker">${s.symbol}</span>
+              <span class="sector-pill">NSE</span>
+            </div>
+          </div>
+          <div class="stock-price-block">
+            <div class="stock-price">₹${s.price.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+            <div class="stock-change ${chgDir}">${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}%</div>
+          </div>
+          <button class="action-btn ${isHold ? 'hold' : 'buy'}">${action}</button>
+        </div>
+
+        <div class="company-desc"><strong>What this company does:</strong> ${desc}</div>
+
+        <div class="signals-row">
+          ${signals.map(sg => `
+          <div class="signal-badge">
+            <span class="signal-label">${sg.label}:</span>
+            <span class="signal-value">${sg.value}</span>
+            <span>${sg.icon}</span>
+            <span class="tooltip-trigger">?<span class="tooltip-box">${sg.tip}</span></span>
+          </div>`).join('')}
+        </div>
+
+        <div class="trade-plan-box">
+          <div class="trade-flow">
+            <div class="trade-node buy-zone">🟢 BUY ₹${s.buy_low}–₹${s.buy_high}</div>
+            <div class="trade-arrow">→</div>
+            <div class="trade-node target-1">🎯 T1 ₹${s.target1} <span style="opacity:.7;font-size:11px">(+2%)</span></div>
+            <div class="trade-arrow">→</div>
+            <div class="trade-node target-2">🎯 T2 ₹${s.target2} <span style="opacity:.7;font-size:11px">(+4%)</span></div>
+          </div>
+          <div class="stop-loss-row">
+            <span class="sl-label">⛔ Stop Loss:</span>
+            <span class="sl-value">₹${s.stop_loss}</span>
+            <span class="sl-desc">— If price falls here, SELL immediately to protect yourself</span>
+          </div>
+          <div class="invest-calc">
+            <div class="invest-title">If you invest ₹${s.max_invest} in this stock:</div>
+            <div class="invest-grid">
+              <div class="invest-item loss">Max loss: ₹${s.max_loss}</div>
+              <div class="invest-item gain">Profit (T1): ₹${s.profit_t1}</div>
+              <div class="invest-item gain2">Profit (T2): ₹${s.profit_t2}</div>
+              <div class="invest-item shares">~${s.shares} shares</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-footer-row">
+          <div class="confidence-block">
+            <div class="confidence-label">How confident?</div>
+            <div class="confidence-ring-wrap">
+              <svg width="72" height="72" viewBox="0 0 72 72">
+                <circle cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="6"/>
+                <circle id="${ringId}" cx="36" cy="36" r="28" fill="none"
+                  stroke="${isHold ? '#FFA502' : '#00C896'}" stroke-width="6"
+                  stroke-dasharray="${circumference}" stroke-dashoffset="${circumference}"
+                  stroke-linecap="round" transform="rotate(-90 36 36)"
+                  style="transition:stroke-dashoffset 1.5s ease"/>
+              </svg>
+              <div class="confidence-pct" id="${pctId}">0%</div>
+            </div>
+            <div class="confidence-label">${conf >= 75 ? 'Strong Signal' : conf >= 60 ? 'Good Signal' : 'Moderate'}</div>
+          </div>
+          <div class="hold-period-block">
+            <div class="hold-badge">⏱ Hold for 2–5 days</div>
+            <div class="data-source">Data: Zerodha Kite · ${time}</div>
+            <div class="disclaimer">Research only. Not a guarantee. Verify before buying.</div>
+          </div>
+        </div>
+      </div>`;
+
+      // Animate ring after render
+      setTimeout(() => {
+        const ring = document.getElementById(ringId);
+        const pctEl = document.getElementById(pctId);
+        if (!ring || !pctEl) return;
+        const offset = circumference - (conf / 100) * circumference;
+        ring.style.strokeDashoffset = offset;
+        let cur = 0, start = performance.now();
+        (function tick(now) {
+          const t = Math.min((now - start) / 1500, 1);
+          cur = Math.round(t * conf);
+          pctEl.textContent = cur + '%';
+          if (t < 1) requestAnimationFrame(tick);
+        })(start);
+      }, 200);
+    });
+
+    // Avoid section
+    if (avoid?.length) {
+      html += `<div class="section-heading" style="font-size:15px;margin:28px 0 12px;color:#FF4757">⚠️ Stocks to Avoid Today</div>`;
+      avoid.forEach(a => {
+        html += `
+          <div style="background:#161B22;border:1px solid rgba(255,71,87,0.2);border-radius:10px;padding:14px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <strong>${a.name || a.symbol} (${a.symbol})</strong>
+              <span style="font-family:'DM Mono',monospace;color:#FF4757">₹${a.price}</span>
+            </div>
+            <div style="font-size:13px;color:#7D8590">
+              <span style="color:#FF4757;margin-right:6px">⛔</span>${a.avoid_reason || 'Not meeting our buy criteria today.'}
+            </div>
+          </div>`;
+      });
+    }
+
+    el.innerHTML = html;
+  });
+}
+
+/* ── Fetch live quotes for suggestion stock prices (fallback for demo mode) ── */
 async function fetchSuggestionPrices() {
+  if (suggestionsLoaded) return; // Real data already shown
   try {
     const r = await fetch('/api/quotes?symbols=TCS,SUNPHARMA,HDFCBANK,RELIANCE,INFY,ICICIBANK,TATAMOTORS,WIPRO,MARUTI,BAJFINANCE,SBIN');
     if (!r.ok) return;
     const data = await r.json();
     if (data.error) return;
-
-    // Update any price element marked with data-symbol
     document.querySelectorAll('[data-live-price]').forEach(el => {
       const sym = el.getAttribute('data-live-price');
-      if (data[sym] && data[sym].price) {
+      if (data[sym]?.price) {
         el.textContent = '₹' + data[sym].price.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
       }
     });
@@ -3577,13 +3819,20 @@ async function startLiveData() {
     console.log('Backend not reachable — running in demo mode');
     return;
   }
-  await fetchMarketData();
+
+  // Kick off all data fetches in parallel
+  fetchMarketData();
+  fetchSuggestions();     // Auto-starts analysis if needed, polls until done
   fetchSuggestionPrices();
   fetchPortfolio();
 
+  // Refresh market data every 30s, portfolio every 60s
   setInterval(fetchMarketData,       30000);
   setInterval(fetchSuggestionPrices, 15000);
   setInterval(fetchPortfolio,        60000);
+
+  // Re-fetch suggestions every 10 minutes (analysis result is cached)
+  setInterval(() => { suggestionsLoaded = false; fetchSuggestions(); }, 10 * 60 * 1000);
 }
 
 startLiveData();

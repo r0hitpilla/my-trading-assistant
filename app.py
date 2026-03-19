@@ -428,6 +428,41 @@ def get_kite():
     return k
 
 
+@app.route("/api/suggestions")
+def api_suggestions():
+    """
+    Returns today's real stock suggestions.
+    - If analysis is done → returns results immediately.
+    - If idle and user is logged in → auto-starts analysis.
+    - If running → returns progress so dashboard can show loading bar.
+    """
+    # Auto-start if idle and logged in
+    if analysis["status"] == "idle" and load_saved_token():
+        thread = threading.Thread(target=run_analysis_thread, daemon=True)
+        thread.start()
+
+    if analysis["status"] == "running":
+        return jsonify({
+            "status":   "running",
+            "progress": analysis["progress"],
+            "message":  analysis["message"],
+        })
+
+    if analysis["status"] == "done" and analysis["result"]:
+        return jsonify({
+            "status":      "done",
+            "suggestions": analysis["result"]["suggestions"],
+            "avoid":       analysis["result"]["avoid"],
+            "time":        analysis["result"]["time"],
+            "date":        analysis["result"]["date"],
+        })
+
+    if analysis["status"] == "error":
+        return jsonify({"status": "error", "message": analysis["error"]}), 500
+
+    return jsonify({"status": "idle"})
+
+
 @app.route("/api/status")
 def api_status():
     """Is the user logged in?"""
