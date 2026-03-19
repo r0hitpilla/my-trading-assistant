@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Today's Suggestions — Trading Assistant</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+  <link href="/static/style.css" rel="stylesheet"/>
+</head>
+<body>
+
+<!-- HEADER -->
+<nav class="navbar navbar-dark bg-dark px-3 py-3">
+  <a href="/" class="navbar-brand fw-bold fs-5 text-decoration-none">
+    <i class="fa fa-arrow-left me-2 text-muted small"></i>
+    <i class="fa fa-chart-line text-success me-1"></i>Trading Assistant
+  </a>
+  <span class="text-muted small">{{ data.time }}</span>
+</nav>
+
+<div class="container-fluid px-3 py-3" style="max-width:700px; margin:auto">
+
+  <!-- DATE -->
+  <p class="text-muted text-center small mb-3">{{ data.date }}</p>
+
+  <!-- ═══ MARKET HEALTH CARD ═══ -->
+  {% set verdict_color = {'GREEN': 'success', 'YELLOW': 'warning', 'RED': 'danger'}[data.verdict] %}
+  {% set verdict_icon  = {'GREEN': 'check-circle', 'YELLOW': 'exclamation-triangle', 'RED': 'times-circle'}[data.verdict] %}
+
+  <div class="card border-0 shadow mb-3 border-start border-4 border-{{ verdict_color }}">
+    <div class="card-body pb-2">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0 text-uppercase text-muted small">Market Health</h6>
+        <span class="badge bg-{{ verdict_color }} px-3 py-2 fs-6">
+          <i class="fa fa-{{ verdict_icon }} me-1"></i>{{ data.verdict }}
+        </span>
+      </div>
+
+      <div class="row g-2 mb-2">
+        <!-- Nifty -->
+        <div class="col-6">
+          <div class="bg-secondary bg-opacity-25 rounded p-2 text-center">
+            <div class="small text-muted">Nifty 50</div>
+            <div class="fw-bold fs-6">
+              ₹{{ "{:,.2f}".format(data.nifty_price) if data.nifty_price else "N/A" }}
+            </div>
+            {% if data.nifty_pct %}
+              {% if data.nifty_dir == 'UP' %}
+                <div class="small text-success"><i class="fa fa-arrow-up"></i> {{ data.nifty_pct }}%</div>
+              {% else %}
+                <div class="small text-danger"><i class="fa fa-arrow-down"></i> {{ data.nifty_pct|abs }}%</div>
+              {% endif %}
+            {% endif %}
+          </div>
+        </div>
+        <!-- VIX -->
+        <div class="col-6">
+          <div class="bg-secondary bg-opacity-25 rounded p-2 text-center">
+            <div class="small text-muted">Fear Meter (VIX)</div>
+            <div class="fw-bold fs-6">{{ data.vix }}</div>
+            {% if data.vix < 15 %}
+              <div class="small text-success">CALM 😌</div>
+            {% elif data.vix < 20 %}
+              <div class="small text-warning">NERVOUS 😬</div>
+            {% else %}
+              <div class="small text-danger">VERY SCARED 😱</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-{{ verdict_color }} border-0 py-2 mb-2 small">
+        <i class="fa fa-info-circle me-1"></i>{{ data.verdict_text }}
+      </div>
+
+      {% if data.vix_halved %}
+      <div class="alert alert-warning border-0 py-2 mb-2 small">
+        <i class="fa fa-exclamation-triangle me-1"></i>
+        <strong>VIX above 20:</strong> Your position sizes have been cut in HALF for safety.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ═══ MONEY CARD ═══ -->
+  <div class="card border-0 shadow mb-3">
+    <div class="card-body py-2">
+      <h6 class="fw-bold text-muted text-uppercase small mb-2">Your Money Limits Today</h6>
+      <div class="row g-2 text-center">
+        <div class="col-4">
+          <div class="bg-success bg-opacity-10 rounded p-2">
+            <div class="small text-muted">Max per stock</div>
+            <div class="fw-bold text-success">₹{{ data.max_per_stock|int }}</div>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="bg-warning bg-opacity-10 rounded p-2">
+            <div class="small text-muted">Keep as cash</div>
+            <div class="fw-bold text-warning">₹{{ data.cash_reserve|int }}</div>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="bg-danger bg-opacity-10 rounded p-2">
+            <div class="small text-muted">Max loss/trade</div>
+            <div class="fw-bold text-danger">₹{{ data.max_risk|int }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ STOCK SUGGESTIONS ═══ -->
+  <h6 class="fw-bold text-uppercase text-muted small mt-4 mb-2">
+    <i class="fa fa-star text-warning me-1"></i>Top Stock Suggestions
+  </h6>
+
+  {% if data.suggestions %}
+    {% for s in data.suggestions %}
+    <div class="card border-0 shadow mb-3 stock-card">
+      <div class="card-body">
+
+        <!-- Company header -->
+        <div class="d-flex justify-content-between align-items-start mb-1">
+          <div>
+            <span class="badge bg-dark me-2">#{{ loop.index }}</span>
+            <strong>{{ s.name }}</strong>
+            <span class="text-muted small ms-1">({{ s.symbol }})</span>
+          </div>
+          <div class="text-end">
+            <span class="badge bg-secondary">{{ s.confidence }}% confident</span>
+          </div>
+        </div>
+        <p class="text-muted small mb-2">{{ s.description }}</p>
+
+        <!-- Price -->
+        <div class="d-flex align-items-center mb-3">
+          <div class="me-3">
+            <div class="small text-muted">Current Price</div>
+            <div class="fw-bold fs-5">₹{{ s.price }}</div>
+          </div>
+          <div>
+            {% if s.change_pct >= 0 %}
+              <span class="badge bg-success"><i class="fa fa-arrow-up me-1"></i>{{ s.change_pct }}%</span>
+            {% else %}
+              <span class="badge bg-danger"><i class="fa fa-arrow-down me-1"></i>{{ s.change_pct|abs }}%</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Why suggested -->
+        <div class="mb-3">
+          <div class="small fw-bold text-muted mb-1">WHY THIS STOCK TODAY:</div>
+          {% for r in s.reasons %}
+          <div class="small text-muted mb-1"><i class="fa fa-check text-success me-1"></i>{{ r }}</div>
+          {% endfor %}
+        </div>
+
+        <!-- Indicators -->
+        <div class="row g-2 mb-3">
+          <div class="col-4 text-center">
+            <div class="indicator-box {{ 'good' if s.rsi_ok else 'bad' }}">
+              <div class="small text-muted">RSI</div>
+              <div class="fw-bold">{{ s.rsi if s.rsi else 'N/A' }}</div>
+              <div class="tiny">{{ '✅ Safe' if s.rsi_ok else '⚠️ Check' }}</div>
+            </div>
+          </div>
+          <div class="col-4 text-center">
+            <div class="indicator-box {{ 'good' if s.above_ma50 else 'bad' }}">
+              <div class="small text-muted">50-Day Avg</div>
+              <div class="fw-bold">₹{{ s.ma50 }}</div>
+              <div class="tiny">{{ '✅ Above' if s.above_ma50 else '⚠️ Below' }}</div>
+            </div>
+          </div>
+          <div class="col-4 text-center">
+            <div class="indicator-box {{ 'good' if s.volume_ok else 'neutral' }}">
+              <div class="small text-muted">Volume</div>
+              <div class="fw-bold">{{ s.volume_ratio }}x</div>
+              <div class="tiny">{{ '✅ High' if s.volume_ok else '— Normal' }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trade Plan -->
+        <div class="trade-plan p-3 rounded mb-3">
+          <div class="small fw-bold text-muted mb-2">TRADE PLAN:</div>
+          <div class="row g-1">
+            <div class="col-6"><span class="small text-muted">Buy between:</span></div>
+            <div class="col-6 text-end"><strong>₹{{ s.buy_low }} – ₹{{ s.buy_high }}</strong></div>
+
+            <div class="col-6"><span class="small text-muted">Target 1 (+2%):</span></div>
+            <div class="col-6 text-end"><strong class="text-success">₹{{ s.target1 }}</strong></div>
+
+            <div class="col-6"><span class="small text-muted">Target 2 (+4%):</span></div>
+            <div class="col-6 text-end"><strong class="text-success">₹{{ s.target2 }}</strong></div>
+
+            <div class="col-6"><span class="small text-muted">Stop Loss ⛔:</span></div>
+            <div class="col-6 text-end"><strong class="text-danger">₹{{ s.stop_loss }}</strong></div>
+          </div>
+        </div>
+
+        <!-- If you invest -->
+        {% if s.affordable %}
+        <div class="invest-box p-3 rounded">
+          <div class="small fw-bold text-muted mb-2">IF YOU INVEST ₹{{ s.max_invest|int }}:</div>
+          <div class="row g-1">
+            <div class="col-7 small text-muted">Buy approximately:</div>
+            <div class="col-5 text-end small fw-bold">{{ s.shares }} shares</div>
+
+            <div class="col-7 small text-muted">If stop loss hits (loss):</div>
+            <div class="col-5 text-end small fw-bold text-danger">-₹{{ s.max_loss }}</div>
+
+            <div class="col-7 small text-muted">If Target 1 hits (profit):</div>
+            <div class="col-5 text-end small fw-bold text-success">+₹{{ s.profit_t1 }}</div>
+
+            <div class="col-7 small text-muted">If Target 2 hits (profit):</div>
+            <div class="col-5 text-end small fw-bold text-success">+₹{{ s.profit_t2 }}</div>
+          </div>
+        </div>
+        {% else %}
+        <div class="alert alert-warning border-0 py-2 small mb-0">
+          <i class="fa fa-exclamation-triangle me-1"></i>
+          ₹{{ s.price }} is above your max of ₹{{ s.max_invest|int }}.
+          You cannot buy even 1 share. <strong>Skip this stock.</strong>
+        </div>
+        {% endif %}
+
+        <div class="text-center mt-3">
+          <span class="badge bg-dark">
+            <i class="fa fa-clock me-1"></i>Sell before 3:15 PM today
+          </span>
+        </div>
+
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="alert alert-secondary">
+    No strong stock suggestions found today. Consider not trading.
+  </div>
+  {% endif %}
+
+  <!-- ═══ STOCKS TO AVOID ═══ -->
+  {% if data.avoid %}
+  <h6 class="fw-bold text-uppercase text-muted small mt-4 mb-2">
+    <i class="fa fa-ban text-danger me-1"></i>Stocks to Avoid Today
+  </h6>
+  {% for a in data.avoid %}
+  <div class="card border-0 shadow mb-2 border-start border-3 border-danger">
+    <div class="card-body py-2">
+      <div class="d-flex justify-content-between">
+        <div>
+          <strong>{{ a.name }}</strong>
+          <span class="text-muted small ms-1">({{ a.symbol }})</span>
+        </div>
+        <div class="fw-bold">₹{{ a.price }}</div>
+      </div>
+      <p class="text-muted small mb-0 mt-1">
+        <i class="fa fa-exclamation-circle text-danger me-1"></i>{{ a.avoid_reason }}
+      </p>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <!-- ═══ REMINDERS ═══ -->
+  <div class="card border-0 shadow mt-4 mb-4">
+    <div class="card-body">
+      <h6 class="fw-bold text-muted text-uppercase small mb-2">
+        <i class="fa fa-bell text-warning me-1"></i>Important Reminders
+      </h6>
+      <ul class="small text-muted mb-0 ps-3">
+        <li>Set your Stop Loss on Zerodha <strong>immediately after buying</strong></li>
+        <li>Sell ALL positions by <strong>3:15 PM IST</strong></li>
+        <li>Never invest more than <strong>₹{{ data.max_per_stock|int }}</strong> in one stock</li>
+        <li>Keep <strong>₹{{ data.cash_reserve|int }}</strong> as cash — do not invest everything</li>
+        <li>If stop loss hits — sell immediately. Do not hope.</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="text-muted text-center small mb-4">
+    ⚠️ This is research only — not a guarantee of profit.<br>
+    Always verify prices on Zerodha before buying. Final decision is yours.
+  </p>
+
+  <div class="text-center mb-5">
+    <a href="/reset" class="btn btn-outline-secondary btn-sm">
+      <i class="fa fa-redo me-1"></i>Run Fresh Analysis
+    </a>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
