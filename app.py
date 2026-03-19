@@ -171,6 +171,7 @@ analysis = {
     "progress": 0,
     "message":  "",
     "error":    None,
+    "run_date": None,     # date.today().isoformat() of when analysis ran
 }
 
 
@@ -322,6 +323,7 @@ def run_analysis_thread():
         analysis["status"]   = "done"
         analysis["progress"] = 100
         analysis["message"]  = "Done!"
+        analysis["run_date"] = str(date.today())
 
     except Exception as e:
         analysis["status"] = "error"
@@ -436,6 +438,11 @@ def api_suggestions():
     - If idle and user is logged in → auto-starts analysis.
     - If running → returns progress so dashboard can show loading bar.
     """
+    global analysis
+    # Reset stale analysis from a previous trading day
+    if analysis["status"] == "done" and analysis.get("run_date") != str(date.today()):
+        analysis = {"status": "idle", "result": None, "progress": 0, "message": "", "error": None, "run_date": None}
+
     # Auto-start if idle and logged in
     if analysis["status"] == "idle" and load_saved_token():
         thread = threading.Thread(target=run_analysis_thread, daemon=True)
